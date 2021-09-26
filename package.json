@@ -1,0 +1,18 @@
+{
+  "name": "etone_exam_tool",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "sven <hellosc@qq.com>",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "devDependencies": {
+    "cz-conventional-changelog": "^3.3.0"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  }
+}
