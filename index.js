@@ -80,6 +80,19 @@ class Exam {
         }
         Exam.exams = localExams
     }
+    static filterExamName(name) {
+        return name
+            .replace(/^\s+\d+[\.|．]\s+/, '') // .e.g '  1． '
+            .replace(/\s+（.*）\s?$/, '') // .e.g '     （5 分）'
+    }
+    static filterDetailsPageExamName(name) {
+        return name
+            .replace(/^\s+/, '') // .e.g ' '
+            .replace(/\s+（.*）\s?$/, '') // .e.g '     （5 分）'
+    }
+    static filterAttendExamOptionName(name) {
+        return name.replace(/^\w．\s*/, '')
+    }
     constructor(data) { Object.assign(this, data) }
     merge(exam) {
         for (const type in Exam.EXAM_TYPE) {
@@ -104,9 +117,8 @@ class Exam {
      */
     getExamItemTitle(el) {
         for (const child of Array.from(el.childNodes)) {
-            if (child.nodeType === 3) return child.nodeValue
+            if (child.nodeType === 3) return Exam.filterDetailsPageExamName(child.nodeValue)
         }
-        console.log(el.childNodes.length)
     }
 }
 
@@ -126,17 +138,82 @@ class Tool {
      */
     static get EXAM_WRAPPER_EL() { return document.getElementById('divPaper') }
     /**
-     * 考试名称
+     * 考试试题父级元素(考试答题页)
+     * @returns {HTMLDivElement}
+     */
+    static get ATTEND_EXAM_WRAPPER_EL() { return document.getElementById('divPaperContent') }
+    /**
+     * 考试名称(详情页)
      * @returns {string}
      */
     static get EXAM_TITLE() { return document.getElementById('lblTitle').innerText }
+    /**
+     * 考试名称(考试答题页)
+     * @returns {string}
+     */
+    static get ATTEND_EXAM_TITLE() { return document.getElementById('divExamName').innerText }
     constructor(exam) { this.exam = exam }
     init() {
         if (Tool.isPreviewPage) {
             this.getExamData().save()
         } else {
-            console.log('答题 ...')
+            this.fillExam()
         }
+    }
+    fillExam() {
+        // 1. 获取考题数据
+        const exam = this.getCurrentExam()
+        // 2. 填充已知考题答案
+        let currentExamType = Exam.EXAM_TYPE.RADIO // 当前题型
+        for (const examItemEl of Tool.ATTEND_EXAM_WRAPPER_EL.children) {
+            // let examItemTitle = '' // 当前试题题目
+            // let examItem = [] // 当前试题答案
+            if (this.isAttendExamListEl(examItemEl)) {
+                // 便利每个题型下的所有题(子元素为 table, 每个题一个 table)
+                for (const examItemRowItem of examItemEl.children) {
+                    // 获取题目
+                    const examItemTitle = this.getAttendExamTitle(examItemRowItem)
+                    // 查找已知试题中是否存在此题
+                    const existsExamItem = exam[currentExamType.field][examItemTitle]
+                    if (!existsExamItem) {
+                        console.warn('当前题目答案未知: ', examItemTitle)
+                        continue
+                    }
+                    // 遍历所有选项并选中正确选项
+                    const examItemElOptions = this.getAttendExamElOptionSpanList(examItemRowItem)
+                    if (examItemElOptions.length === 0) console.warn('Internal Erorr: 未获取到选项')
+                    for (const option of examItemElOptions) {
+                        const optionName = Exam.filterAttendExamOptionName(option.innerText)
+                        if (existsExamItem.includes(optionName)) {
+                            option.click()
+                        }
+                    }
+                }
+            } else {
+                currentExamType = this.exam.getExamType(examItemEl)
+            }
+        }
+        return this
+    }
+    getAttendExamElOptionSpanList(el) {
+        const multipleSpanList = el.querySelectorAll('table.Nsb_exam_xuanxiang tr > td > span')
+        if (multipleSpanList.length > 0) return multipleSpanList 
+        return el.querySelectorAll('tr')[1].querySelectorAll('span')
+    }
+    /**
+     * 获取题目(答题页)
+     * @param {HTMLTableElement} el
+     * @returns {string}
+     */
+    getAttendExamTitle(el) {
+        const td = el.querySelector('tr.Nsb_exam_sttitle_small > td')
+        return Exam.filterExamName(td.innerText)
+    }
+    getCurrentExam() {
+        for (const examTitle in Exam.exams) {
+            if (Tool.ATTEND_EXAM_TITLE.indexOf(examTitle) !== -1) return Exam.exams[examTitle]
+        }
+        alert('[Tool Warning]: 当前考题数据不存在')
     }
     getExamData() {
         this.exam.title = Tool.EXAM_TITLE
@@ -176,7 +253,7 @@ class Tool {
         return this
     }
     save() {
-        console.warn(this.exam)
+        console.warn('考题数据: ', this.exam)
         Exam.saveExam(this.exam)
     }
     /**
@@ -185,6 +262,12 @@ class Tool {
      * @returns {boolean}
      */
     isExamListEl(el) { return el.id.indexOf('divContentListForType') === 0 }
+    /**
+     * 当前元素是否是包含试题的元素(答题页)
+     * @param {HTMLDivElement} el
+     * @returns {boolean}
+     */
+    isAttendExamListEl(el) { return el.matches('.Nsb_exam_stcontent') }
 }
 
 window._$Exam = new Exam()
