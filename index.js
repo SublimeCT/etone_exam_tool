@@ -15,26 +15,45 @@ class Exam {
      */
     checkboxExamItems = {}
     /**
+     * 多选题(包含全部选项)
+     * @description 由于实际考试时多选题的选项可能与保存的答案选项不同, 所有选项 > 显示的选项, 所以保存的答案信息并不完全正确, 可能存在漏选的情况
+     * @description 此数据的意义在于计算多选题选项的覆盖率
+     * @type {{[title: string]: Array<string>}}
+     */
+    allCheckboxExamItems = {}
+    /**
      * 判断题
      * @type {{[title: string]: Array<string>}}
      */
     judgingExamItems = {}
     /**
      * 题型配置
-     * @returns {{[type: string]: {label: string, field: string}}}
+     * @returns {{[type: string]: {label: string, field: string, concatOptions: boolean}}}
      */
     static EXAM_TYPE = {
         RADIO: {
             label: '单选题',
             field: 'radioExamItems',
+            /** 在 merge 时是否将所有选项混合 */
+            concatOptions: false,
+            /** 需要保存所有 option 的字段, 若为空则不保存 */
+            saveAllOptionsField: null,
         },
         CHECKBOX: {
             label: '多选题',
             field: 'checkboxExamItems',
+            /** 在 merge 时是否将所有选项混合 */
+            concatOptions: true,
+            /** 需要保存所有 option 的字段, 若为空则不保存 */
+            saveAllOptionsField: 'allCheckboxExamItems',
         },
         JUDGING: {
             label: '判断题',
             field: 'judgingExamItems',
+            /** 在 merge 时是否将所有选项混合 */
+            concatOptions: false,
+            /** 需要保存所有 option 的字段, 若为空则不保存 */
+            saveAllOptionsField: null,
         },
     }
     /** 全部试题数据, 由 `build.js` 替换 */
@@ -79,6 +98,7 @@ class Exam {
             localExams[exam.title] = exam
         }
         Exam.exams = localExams
+        return localExams[exam.title]
     }
     static filterExamName(name) {
         return name
@@ -95,10 +115,40 @@ class Exam {
     }
     constructor(data) { Object.assign(this, data) }
     merge(exam) {
-        for (const type in Exam.EXAM_TYPE) {
-            const field = Exam.EXAM_TYPE[type].field
-            Object.assign(this[field], exam[field])
+        for (const typeKey in Exam.EXAM_TYPE) {
+            // 合并试题数据
+            const type = Exam.EXAM_TYPE[typeKey]
+            if (type.concatOptions) { // 将每个题的 options 合并
+                this.mergeOption(exam, type.field)
+                // const allExamItem = {...exam[type.field]} // 保存合并后的所有题目
+                // for (const examItemTitle in this[type.field]) { // 遍历所有题
+                //     // 已存在的题
+                //     const existsExamItem = allExamItem[examItemTitle]
+                //     // 若传入的 exam 存在此题, 则将选项与已存在的选项合并
+                //     allExamItem[examItemTitle] = existsExamItem
+                //         ? [...new Set(existsExamItem.concat(this[type.field][examItemTitle]))]
+                //         : this[type.field][examItemTitle]
+                // }
+                // this[type.field] = allExamItem
+                console.log(this[type.field])
+            } else {
+                Object.assign(this[type.field], exam[type.field])
+            }
+            // 若保存了此题型的试题的全部 option, 则将选项也进行合并
+            if (type.saveAllOptionsField) this.mergeOption(exam, type.saveAllOptionsField)
         }
+    }
+    mergeOption(newExamItem, field) {
+        const allExamItem = { ...newExamItem[field] } // 保存合并后的所有题目
+        for (const examItemTitle in this[field]) { // 遍历所有题
+            // 已存在的题
+            const existsExamItem = allExamItem[examItemTitle]
+            // 若传入的 exam 存在此题, 则将选项与已存在的选项合并
+            allExamItem[examItemTitle] = existsExamItem
+                ? [...new Set(existsExamItem.concat(this[field][examItemTitle]))]
+                : this[field][examItemTitle]
+        }
+        this[field] = allExamItem
     }
     /**
      * 根据题型元素获取题型
@@ -154,11 +204,16 @@ class Tool {
     static get ATTEND_EXAM_TITLE() { return document.getElementById('divExamName').innerText }
     constructor(exam) { this.exam = exam }
     init() {
+        this.printHelpMessage()
         if (Tool.isPreviewPage) {
             this.getExamData().save()
         } else {
             this.fillExam()
         }
+    }
+    printHelpMessage() {
+        console.log('%c[etone_exam_tool] %c考试答案填充/解析脚本', 'color: black;padding: 3px;background-color: pink;border-radius: 3px;', 'color: white;padding: 3px;background-color: black;border-radius: 3px;')
+        console.log('usage: %cwindow._$ExamTool.init();%c\t // 重新执行脚本(填充考试答案或解析答案);', 'color: teal;', '')
     }
     fillExam() {
         // 1. 获取考题数据
@@ -221,6 +276,7 @@ class Tool {
         for (const examItemEl of Tool.EXAM_WRAPPER_EL.children) {
             let examItemTitle = '' // 当前试题题目
             let examItem = [] // 当前试题答案
+            let saveAllOptionsField = [] // 所有选项
             if (this.isExamListEl(examItemEl)) {
                 // 便利每个题型下的所有题
                 for (const examItemRowItem of examItemEl.children) {
@@ -232,6 +288,7 @@ class Tool {
                             for (const optEl of options) {
                                 const checked = !!optEl.querySelector('input[checked]')
                                 const optText = optEl.querySelector('span').innerText
+                                saveAllOptionsField.push(optText)
                                 if (checked) {
                                     examItem.push(optText)
                                 }
@@ -242,6 +299,9 @@ class Tool {
                             if (isRight) {
                                 this.exam[currentExamType.field][examItemTitle] = examItem
                             }
+                            // 保存所有 options 以计算考试时已保存的答案是否准确
+                            if (currentExamType.saveAllOptionsField) this.exam[currentExamType.saveAllOptionsField][examItemTitle] = saveAllOptionsField
+                            saveAllOptionsField = []
                             examItem = []
                         }
                     }
@@ -253,8 +313,8 @@ class Tool {
         return this
     }
     save() {
+        this.exam = Exam.saveExam(this.exam)
         console.warn('考题数据: ', this.exam)
-        Exam.saveExam(this.exam)
     }
     /**
      * 当前元素是否是包含试题的元素
