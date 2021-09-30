@@ -61,6 +61,25 @@ class Exam {
     static _DEFAULT_EXAM = null
     static get DEFAULT_EXAM() { return Exam._DEFAULT_EXAM || (Exam._DEFAULT_EXAM = JSON.parse(decodeURI(Exam.DEFAULT_EXAM_DATA))) }
     static _exams = null
+    /** 标准答案 ID 前缀 */
+    static STANDARD_ANSWER_ID_PREFIX = 'hidStandardAnswer'
+    /**
+     * 所有标准答案 input 元素集合
+     * @type {NodeList}
+     */
+    static get ALL_STANDARD_ANSWER_EL() { return document.querySelectorAll(`input[id^=${Exam.STANDARD_ANSWER_ID_PREFIX}]`) }
+    /**
+     * PaperViewUtil instance
+     */
+    static _newvUtil = null
+    /**
+     * PaperViewUtil
+     */
+    static get newvUtil() {
+        const util = Exam._newvUtil || (Exam._newvUtil = new newv.exam.paperViewUtil())
+        util.paperVersion = '2.0'
+        return util
+    }
     /**
      * 获取本地保存的考试数据
      * @returns {{[examTitle: string]: Exam}}
@@ -208,13 +227,50 @@ class Tool {
         if (Tool.isPreviewPage) {
             this.getExamData().save()
         } else {
-            this.fillExam()
+            // this.fillExam()
+            this.fillStandardAnswer()
         }
     }
     printHelpMessage() {
         console.log('%c[etone_exam_tool] %c考试答案填充/解析脚本', 'color: black;padding: 3px;background-color: pink;border-radius: 3px;', 'color: white;padding: 3px;background-color: black;border-radius: 3px;')
         console.log('usage: %cwindow._$ExamTool.init();%c\t // 重新执行脚本(填充考试答案或解析答案);', 'color: teal;', '')
     }
+    /**
+     * 填充标准答案
+     */
+    fillStandardAnswer() {
+        // 所有考题标准答案
+        for (const answerInputEl of Exam.ALL_STANDARD_ANSWER_EL) {
+            const questionID = this.getQuestionIDByAnswerInput(answerInputEl)
+            const answerList = this.getAnswerByAnswerInput(answerInputEl)
+            // 选中所有标准答案
+            for (const answerItem of answerList) {
+                const answerEl = document.querySelector(`#Answer_${questionID}[value="${answerItem}"]`)
+                answerEl.click()
+            }
+        }
+    }
+    /**
+     * 从答案 <input> 中获取 question ID
+     * @param {HTMLInputElement} el input
+     * @returns {string}
+     */
+    getQuestionIDByAnswerInput(el) {
+        return el.id.substr(Exam.STANDARD_ANSWER_ID_PREFIX.length + 1)
+    }
+    /**
+     * 从答案 input 中获取标准答案
+     * @param {HTMLInputElement} el input
+     * @return {Array<string>}
+     */
+    getAnswerByAnswerInput(el) {
+        const answerList = Exam.newvUtil.GetStandardAnswerByPaperVersion(el.value)
+        return answerList.split('|')
+    }
+    /**
+     * 填充已知答案
+     * @returns {this}
+     */
     fillExam() {
         // 1. 获取考题数据
         const exam = this.getCurrentExam()
